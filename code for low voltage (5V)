@@ -1,0 +1,177 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+
+// ---------- DHT11 ----------
+#define DHTPIN D4
+#define DHTTYPE DHT11
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// ---------- LCD ----------
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// ---------- Pins ----------
+#define CURRENT_PIN A0
+
+#define RELAY_PIN D5
+#define BUZZER_PIN D6
+
+#define RED_LED D7
+#define YELLOW_LED D3
+#define GREEN_LED 3   // RX = GPIO3
+
+// ---------- Temperature limits ----------
+#define WARNING_TEMP 35.0
+#define CRITICAL_TEMP 50.0
+
+void setup()
+{
+  dht.begin();
+
+  lcd.init();
+  lcd.backlight();
+
+  pinMode(RED_LED, OUTPUT);
+  pinMode(YELLOW_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  // Initially OFF
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(YELLOW_LED, LOW);
+  digitalWrite(GREEN_LED, LOW);
+
+  digitalWrite(BUZZER_PIN, LOW);
+
+  // Relay OFF initially
+  digitalWrite(RELAY_PIN, HIGH);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("EnergyGuard");
+  lcd.setCursor(0, 1);
+  lcd.print("Starting...");
+
+  delay(2000);
+  lcd.clear();
+}
+
+void loop()
+{
+  // Read temperature
+  float temperature = dht.readTemperature();
+
+  // Read current sensor
+  int rawValue = analogRead(CURRENT_PIN);
+
+  // Convert A0 reading
+  float voltage = rawValue * (1.0 / 1023.0);
+
+  // ACS712-20A approximate calculation
+  float current = (voltage - 2.5) / 0.100;
+
+  // Remove negative value for display
+  if (current < 0)
+    current = -current;
+
+  // Ignore very small readings
+  if (current < 0.05)
+    current = 0;
+
+  // Sensor error
+  if (isnan(temperature))
+  {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("DHT11 ERROR");
+    
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(YELLOW_LED, LOW);
+    digitalWrite(RED_LED, HIGH);
+
+    digitalWrite(BUZZER_PIN, HIGH);
+
+    delay(1000);
+    return;
+  }
+
+  // ---------- SAFE ----------
+  if (temperature < WARNING_TEMP)
+  {
+    digitalWrite(GREEN_LED, HIGH);
+    digitalWrite(YELLOW_LED, LOW);
+    digitalWrite(RED_LED, LOW);
+
+    digitalWrite(BUZZER_PIN, LOW);
+
+    // Relay ON
+    digitalWrite(RELAY_PIN, LOW);
+
+    lcd.clear();
+
+    lcd.setCursor(0, 0);
+    lcd.print("T:");
+    lcd.print(temperature, 1);
+    lcd.print("C I:");
+    lcd.print(current, 1);
+    lcd.print("A");
+
+    lcd.setCursor(0, 1);
+    lcd.print("STATUS: SAFE");
+  }
+
+  // ---------- WARNING ----------
+  else if (temperature < CRITICAL_TEMP)
+  {
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(YELLOW_LED, HIGH);
+    digitalWrite(RED_LED, LOW);
+
+    digitalWrite(BUZZER_PIN, LOW);
+
+    // Relay ON
+    digitalWrite(RELAY_PIN, LOW);
+
+    lcd.clear();
+
+    lcd.setCursor(0, 0);
+    lcd.print("T:");
+    lcd.print(temperature, 1);
+    lcd.print("C I:");
+    lcd.print(current, 1);
+    lcd.print("A");
+
+    lcd.setCursor(0, 1);
+    lcd.print("STATUS: WARNING");
+  }
+
+  // ---------- CRITICAL ----------
+  else
+  {
+    digitalWrite(GREEN_LED, LOW);
+    digitalWrite(YELLOW_LED, LOW);
+    digitalWrite(RED_LED, HIGH);
+
+    digitalWrite(BUZZER_PIN, HIGH);
+
+    // Relay OFF
+    digitalWrite(RELAY_PIN, HIGH);
+
+    lcd.clear();
+
+    lcd.setCursor(0, 0);
+    lcd.print("T:");
+    lcd.print(temperature, 1);
+    lcd.print("C I:");
+    lcd.print(current, 1);
+    lcd.print("A");
+
+    lcd.setCursor(0, 1);
+    lcd.print("STATUS: CRITICAL");
+  }
+
+  delay(1000);
+}
